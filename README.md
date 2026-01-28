@@ -8,94 +8,93 @@
 
 # PureTensorRT-ModelZoo
 
-> 如果上方语言切换按钮无法使用（例如某些平台禁用了样式），请直接查看 `README.zh.md` 或 `README.en.md`。
+> **纯C++ TensorRT推理实现 | 无ONNX依赖 | 无插件 | 从权重直接构建引擎**
 
-我把自己写的几个纯 C++ TensorRT Demo 放在这个仓库里，全部都是直接用 `.wts` 权重起引擎，不走 ONNX、也没有插件。下面就是怎么跑。
-
----
-
-## 环境准备
-
-- TensorRT 8.x + CUDA 11 以上（我在 Ubuntu 20.04 + CUDA 11.8 + TensorRT 8.6 上测试）
-- cuDNN、OpenCV、CMake 或直接用 g++/nvcc
-- 把 CUDA 和 TensorRT 的 `include` / `lib` 路径加到编译命令里
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TensorRT](https://img.shields.io/badge/TensorRT-8.x-76B900?logo=nvidia)](https://developer.nvidia.com/tensorrt)
+[![CUDA](https://img.shields.io/badge/CUDA-11+-76B900?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![Jetson](https://img.shields.io/badge/Jetson-Orin-76B900?logo=nvidia)](https://developer.nvidia.com/embedded/jetson-orin)
 
 ---
 
-## 权重转换
+## 为什么选择这个仓库？
 
-每个模型目录都带了一个把 PyTorch 权重转成 `.wts` 的脚本，命令大同小异：
+市面上 95% 的 TensorRT 项目都依赖 ONNX 转换，而这个仓库提供的是**纯 C++ TensorRT API 实现**——直接从 `.wts` 权重文件构建推理引擎，让你完全掌控网络结构。
+
+| 特性 | 本项目 | ONNX 方案 |
+|------|--------|-----------|
+| 网络构建方式 | C++ API 逐层构建 | 黑盒转换 |
+| 自定义层支持 | 完全可控 | 受限于导出支持 |
+| 调试友好度 | 可逐层检查 | 难以定位问题 |
+| 依赖项 | 仅 TensorRT + CUDA | 需要 ONNX Runtime |
+| 学习价值 | 深入理解 TensorRT | 仅了解调用流程 |
+
+---
+
+## 支持的模型
+
+| 模型 | 任务 | 输入尺寸 | 精度 | 代码行数 |
+|------|------|----------|------|----------|
+| **YOLOv8** | 物体检测 | 640×640 | FP32/FP16 | 2,800+ |
+| **Vision Transformer (ViT)** | 图像分类 | 224×224 | FP32 | 1,450+ |
+| **ResNet-50** | 图像分类 | 224×224 | FP16 | 1,000+ |
+| **AlexNet** | 图像分类 | 224×224 | FP32/FP16 | 780+ |
+| **BERT** | 文本处理 | ≤128 tokens | FP32 | 1,700+ |
+
+> 涵盖 **CV + NLP** 双领域，从经典 CNN 到 Transformer 架构全覆盖
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- TensorRT 8.x + CUDA 11+（测试环境：Ubuntu 20.04 + CUDA 11.8 + TensorRT 8.6）
+- cuDNN、OpenCV
+- CMake 或 g++/nvcc
+
+### 三步运行
 
 ```bash
-python <模型目录>/gen_wts.py --weights your_model.pth --output your_model.wts
-```
+# 1. 转换权重
+python YoloV8/gen_wts.py --weights yolov8n.pt --output yolov8n.wts
 
-YOLOv8 还可以用 `convert_for_tensorrt.py` 直接把官方的 `.pt` 转好。
+# 2. 编译
+cd YoloV8 && make builder && make runtime
 
----
-
-## 编译与使用
-
-所有目录都放了 `Makefile` 或者编译命令，基本套路如下：
-
-1. 进入模型目录
-2. 编译 builder：`make builder`（或者 `make`，看目录里的提示）
-3. 编译 runtime：`make runtime`
-4. 用 builder 把 `.wts` 变成 `.engine`
-5. 用 runtime 跑推理或者性能测试
-
-下面给几个常用命令：
-
-### YOLOv8
-```bash
-cd YoloV8
-python gen_wts.py --weights yolov8n.pt --output yolov8n.wts
-make builder && make runtime
+# 3. 构建引擎并推理
 ./yolov8_builder yolov8n.wts yolov8n.engine n
-# 检测整张图
 ./yolov8_runtime -d yolov8n.engine ./images/
-# 跑性能
-./yolov8_runtime -p yolov8n.engine ./image.jpg 100
 ```
-
-### Vision Transformer (ViT)
-```bash
-cd Vit
-python gen_wts.py --weights vit.pth --output vit.wts
-make builder && make runtime
-./vit_builder vit.wts vit.engine
-./vit_runtime vit.engine ./image.jpg
-```
-
-### ResNet / AlexNet
-```bash
-cd ResNet   # 或 Alexnet
-python gen_wts.py --weights resnet50.pth --output resnet50.wts
-make builder && make runtime
-./resnet_builder resnet50.wts resnet50.engine
-./resnet_runtime resnet50.engine ./image.jpg
-```
-
-输出一般会打印 Top-1/Top-5 或者把检测结果存到 `results/`，具体看终端提示。
 
 ---
 
-## 目录说明
+## 项目结构
 
-- `Alexnet/`：单文件版 AlexNet，适合看最基础的 API 使用。
-- `ResNet/`：ResNet-50 的 builder/runtime 拆分示例。
-- `Vit/`：Vision Transformer，里面有 LayerNorm、GELU 等写法。
-- `YoloV8/`：YOLOv8 全流程，含批量推理和性能统计脚本。
+```
+├── YoloV8/          # YOLOv8 完整实现（检测/分类/分割/姿态）
+├── Vit/             # Vision Transformer（含 LayerNorm、GELU 等自定义实现）
+├── ResNet/          # ResNet-50（Builder/Runtime 分离设计示例）
+├── Alexnet/         # AlexNet（最简单的入门示例）
+└── bert_trt/        # BERT（NLP Transformer 实现）
+```
 
-我之后会慢慢把别的模型也搬进来，更新都会写在各自目录的 README 里。
+---
+
+## 适合谁？
+
+- 想**深入学习 TensorRT C++ API** 的开发者
+- 需要在 **Jetson 等嵌入式设备**上部署模型的工程师
+- 对 ONNX 转换结果不满意，想**精细控制网络结构**的研究者
+- 正在准备 **NVIDIA 相关技术面试**的求职者
 
 ---
 
 ## 许可证
 
-MIT License，随意使用，记得自测。
+MIT License，随意使用。
 
-如果这些代码对你有帮助，欢迎点个 ⭐️。
+如果这个项目对你有帮助，欢迎点个 ⭐️ 支持一下！
 
   </div>
 
@@ -103,94 +102,93 @@ MIT License，随意使用，记得自测。
 
 # PureTensorRT-ModelZoo
 
-> If the language toggle above does not work (for example, when styles are stripped), open `README.en.md` or `README.zh.md` instead.
+> **Pure C++ TensorRT Implementations | No ONNX | No Plugins | Build Engines Directly from Weights**
 
-A set of pure C++ TensorRT demos I wrote for myself. Everything builds engines straight from `.wts` files—no ONNX export, no plugins. Here’s how to run them.
-
----
-
-## Setup
-
-- TensorRT 8.x with CUDA 11 or newer (I test on Ubuntu 20.04 + CUDA 11.8 + TensorRT 8.6)
-- cuDNN, OpenCV, and either CMake or plain g++/nvcc
-- Make sure the CUDA and TensorRT `include` / `lib` paths are added to your build commands
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TensorRT](https://img.shields.io/badge/TensorRT-8.x-76B900?logo=nvidia)](https://developer.nvidia.com/tensorrt)
+[![CUDA](https://img.shields.io/badge/CUDA-11+-76B900?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![Jetson](https://img.shields.io/badge/Jetson-Orin-76B900?logo=nvidia)](https://developer.nvidia.com/embedded/jetson-orin)
 
 ---
 
-## Convert weights
+## Why This Repository?
 
-Each model folder has a helper that turns PyTorch checkpoints into `.wts` files:
+95% of TensorRT projects rely on ONNX conversion. This repository provides **pure C++ TensorRT API implementations**—building inference engines directly from `.wts` weight files, giving you complete control over network architecture.
+
+| Feature | This Project | ONNX Approach |
+|---------|--------------|---------------|
+| Network Construction | Layer-by-layer C++ API | Black-box conversion |
+| Custom Layer Support | Full control | Limited by export support |
+| Debug Friendliness | Inspect each layer | Hard to locate issues |
+| Dependencies | TensorRT + CUDA only | Requires ONNX Runtime |
+| Learning Value | Deep TensorRT understanding | Surface-level usage |
+
+---
+
+## Supported Models
+
+| Model | Task | Input Size | Precision | Lines of Code |
+|-------|------|------------|-----------|---------------|
+| **YOLOv8** | Object Detection | 640×640 | FP32/FP16 | 2,800+ |
+| **Vision Transformer (ViT)** | Image Classification | 224×224 | FP32 | 1,450+ |
+| **ResNet-50** | Image Classification | 224×224 | FP16 | 1,000+ |
+| **AlexNet** | Image Classification | 224×224 | FP32/FP16 | 780+ |
+| **BERT** | Text Processing | ≤128 tokens | FP32 | 1,700+ |
+
+> Covers **both CV and NLP** — from classic CNNs to Transformer architectures
+
+---
+
+## Quick Start
+
+### Requirements
+
+- TensorRT 8.x + CUDA 11+ (tested on Ubuntu 20.04 + CUDA 11.8 + TensorRT 8.6)
+- cuDNN, OpenCV
+- CMake or g++/nvcc
+
+### Three Steps to Run
 
 ```bash
-python <model-folder>/gen_wts.py --weights your_model.pth --output your_model.wts
-```
+# 1. Convert weights
+python YoloV8/gen_wts.py --weights yolov8n.pt --output yolov8n.wts
 
-For YOLOv8 you can also run `convert_for_tensorrt.py` on the official `.pt` file.
+# 2. Build
+cd YoloV8 && make builder && make runtime
 
----
-
-## Build and run
-
-Every directory ships with a `Makefile` or explicit commands. The routine is always:
-
-1. `cd` into the model folder
-2. Build the builder binary: `make builder` (or just `make`, follow the local notes)
-3. Build the runtime binary: `make runtime`
-4. Run the builder to turn `.wts` into `.engine`
-5. Use the runtime binary for inference or benchmarking
-
-Quick examples:
-
-### YOLOv8
-```bash
-cd YoloV8
-python gen_wts.py --weights yolov8n.pt --output yolov8n.wts
-make builder && make runtime
+# 3. Create engine and run inference
 ./yolov8_builder yolov8n.wts yolov8n.engine n
-# run detection on a folder
 ./yolov8_runtime -d yolov8n.engine ./images/
-# benchmark loop
-./yolov8_runtime -p yolov8n.engine ./image.jpg 100
 ```
-
-### Vision Transformer (ViT)
-```bash
-cd Vit
-python gen_wts.py --weights vit.pth --output vit.wts
-make builder && make runtime
-./vit_builder vit.wts vit.engine
-./vit_runtime vit.engine ./image.jpg
-```
-
-### ResNet / AlexNet
-```bash
-cd ResNet   # or Alexnet
-python gen_wts.py --weights resnet50.pth --output resnet50.wts
-make builder && make runtime
-./resnet_builder resnet50.wts resnet50.engine
-./resnet_runtime resnet50.engine ./image.jpg
-```
-
-The runtime prints Top-1/Top-5 numbers or saves detection images in `results/` depending on the model.
 
 ---
 
-## Folders
+## Project Structure
 
-- `Alexnet/`: single-file TensorRT example for the basics
-- `ResNet/`: builder/runtime split for ResNet-50
-- `Vit/`: Vision Transformer layers (LayerNorm, GELU, etc.) written out in TensorRT
-- `YoloV8/`: full YOLOv8 flow with batch inference and perf tools
+```
+├── YoloV8/          # Complete YOLOv8 (detect/classify/segment/pose)
+├── Vit/             # Vision Transformer (custom LayerNorm, GELU, etc.)
+├── ResNet/          # ResNet-50 (Builder/Runtime separation example)
+├── Alexnet/         # AlexNet (simplest beginner example)
+└── bert_trt/        # BERT (NLP Transformer implementation)
+```
 
-I’ll keep adding more models over time. Check each folder’s README for details.
+---
+
+## Who Is This For?
+
+- Developers who want to **deeply learn TensorRT C++ API**
+- Engineers deploying models on **Jetson and embedded devices**
+- Researchers who need **fine-grained control** over network structure
+- Job seekers preparing for **NVIDIA technical interviews**
 
 ---
 
 ## License
 
-MIT License. Use it however you like—just test on your own setup.
+MIT License. Use it however you like.
 
-If it helps you, a ⭐️ would be appreciated.
+If this project helps you, a ⭐️ would be appreciated!
 
   </div>
 </div>
