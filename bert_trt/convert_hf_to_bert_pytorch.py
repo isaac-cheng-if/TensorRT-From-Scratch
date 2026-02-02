@@ -98,12 +98,17 @@ def convert_huggingface_to_bert_pytorch(hf_state_dict, model_config=None):
         # Segment Embedding
         elif key == 'bert.embeddings.token_type_embeddings.weight':
             new_key = 'embedding.segment.weight'
-            # HuggingFace: [2, 768] -> BERT-pytorch: [3, 768]
+            # HuggingFace: [2, hidden] -> BERT-pytorch: [3, hidden]
+            # 修复: 保持正确的索引映射
+            #   token_type_ids=0 -> segment[0] = sentence A
+            #   token_type_ids=1 -> segment[1] = sentence B
+            #   token_type_ids=2 -> segment[2] = padding (zeros)
             if value.shape[0] == 2:
                 print(f"📝 扩展 segment embedding: {value.shape} -> [3, {value.shape[1]}]")
                 new_value = torch.zeros(3, value.shape[1])
-                new_value[1] = value[0]  # 句子 A
-                new_value[2] = value[1]  # 句子 B
+                new_value[0] = value[0]  # 句子 A (token_type_ids=0)
+                new_value[1] = value[1]  # 句子 B (token_type_ids=1)
+                # new_value[2] 保持为零 (padding)
                 value = new_value
 
         # Embedding LayerNorm - 现在转换（已添加到 BERTEmbedding）
@@ -197,8 +202,9 @@ def convert_huggingface_to_bert_pytorch(hf_state_dict, model_config=None):
     print(f"  📊 总计: {len(hf_state_dict)} 个参数")
 
     # 根据模型类型计算期望参数数量
-    # BERT-Base: 195, BERT-Large: 387
-    expected_params = 195 if model_config['n_layers'] == 12 else 387
+    # BERT-Base: 197 (Embedding: 5 + 12层*16 = 197)
+    # BERT-Large: 389 (Embedding: 5 + 24层*16 = 389)
+    expected_params = 197 if model_config['n_layers'] == 12 else 389
     print(f"\n期望模型能加载: {converted_count}/{expected_params} 个参数")
 
     return converted, model_config
